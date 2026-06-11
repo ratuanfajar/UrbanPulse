@@ -1,0 +1,103 @@
+# =============================================================
+#  Python
+# =============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+MANIFEST
+
+# =============================================================
+#  Virtual Environment
+# =============================================================
+urbanpulse/
+venv/
+env/
+.venv/
+.env/
+ENV/
+
+# =============================================================
+#  Jupyter Notebooks – checkpoints only (keep .ipynb)
+# =============================================================
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# =============================================================
+#  ML / Data – large binaries & raw datasets
+# =============================================================
+# Model weights (bisa besar, simpan di cloud storage / DVC)
+# Ignore semua isi folder models, tapi pertahankan struktur folder
+models/*
+!models/.gitkeep
+*.pth
+*.pt
+*.h5
+*.pkl
+*.joblib
+*.onnx
+
+# Data mentah & hasil olahan (terlalu besar untuk Git)
+# Ignore isinya, tapi pertahankan struktur folder
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# =============================================================
+#  Environment variables / secrets
+# =============================================================
+.env
+*.env
+.env.*
+secrets.yaml
+secrets.json
+
+# =============================================================
+#  OS & editor junk
+# =============================================================
+# Windows
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains (PyCharm, dsb.)
+.idea/
+*.iml
+
+# =============================================================
+#  Logs & temp
+# =============================================================
+logs/
+*.log
+*.tmp
+*.bak
+*.swp
+~$*
+
+# =============================================================
+#  Coverage / testing
+# =============================================================
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
