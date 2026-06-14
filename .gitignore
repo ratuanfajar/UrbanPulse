@@ -34,23 +34,8 @@ ENV/
 # =============================================================
 #  ML / Data – large binaries & raw datasets
 # =============================================================
-# Model weights (bisa besar, simpan di cloud storage / DVC)
-# Ignore semua isi folder models, tapi pertahankan struktur folder
-models/*
-!models/.gitkeep
-*.pth
-*.pt
-*.h5
-*.pkl
-*.joblib
-*.onnx
-
-# Data mentah & hasil olahan (terlalu besar untuk Git)
-# Ignore isinya, tapi pertahankan struktur folder
-data/raw/*
-!data/raw/.gitkeep
-data/processed/*
-!data/processed/.gitkeep
+data/
+models/
 
 # =============================================================
 #  Environment variables / secrets
