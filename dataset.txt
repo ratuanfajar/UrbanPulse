@@ -1,2 +1,1 @@
-Dataset yang dipake dinotebook:https://drive.google.com/drive/folders/1tyTHfUgQTsg1xvUDdyqrDuoStYlcs0X1?usp=sharing
-Dataset jabar yang baru (belum diimplementasiin):https://drive.google.com/drive/folders/1T95feaEMeH1qgHxsIBtadtnNVleKuId0?usp=sharing
+https://drive.google.com/drive/folders/1fXb3XE_bD35q-8pS4W6KL3h0BtWpVcav?usp=sharing
