@@ -14,4 +14,3 @@ run_server.bat
 
 # Environment variables
 .env
-.env.*
