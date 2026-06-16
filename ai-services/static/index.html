@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Slum Area Detection</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f0f4f8; color: #1a202c;
+      height: 100vh; display: flex; flex-direction: column;
+    }
+    header {
+      background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+      color: white; padding: 12px 20px;
+      display: flex; align-items: center; gap: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25); flex-shrink: 0;
+    }
+    header h1 { font-size: 1.25rem; font-weight: 700; }
+    header p  { font-size: 0.75rem; opacity: 0.85; }
+    .main { display: flex; flex: 1; overflow: hidden; }
+    .panel {
+      width: 390px; min-width: 340px; background: white;
+      border-right: 1px solid #e2e8f0;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .panel-inner { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+    #map {
+      position: absolute; inset: 0;   /* fill the position:relative parent (was flex:1 -> 0 height) */
+      background: #e8ecf0;  /* visible even without tiles */
+    }
+    .section-title {
+      font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; color: #64748b; padding-bottom: 6px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .search-row { display: flex; gap: 8px; }
+    .search-row input {
+      flex: 1; padding: 9px 12px; border: 1px solid #cbd5e0; border-radius: 8px;
+      font-size: 0.88rem; background: #f8fafc; transition: border 0.2s; outline: none;
+    }
+    .search-row input:focus { border-color: #2563eb; background: white; box-shadow: 0 0 0 3px rgba(37,99,235,0.15); }
+    .btn-icon {
+      padding: 9px 14px; border: none; border-radius: 8px;
+      background: #2563eb; color: white; cursor: pointer; font-size: 1rem;
+      transition: background 0.2s; flex-shrink: 0;
+    }
+    .btn-icon:hover { background: #1d4ed8; }
+    .btn-icon:disabled { background: #94a3b8; cursor: default; }
+    .area-dropdown { position: relative; }
+    .area-list {
+      position: absolute; top: 100%; left: 0; right: 0; background: white;
+      border: 1px solid #cbd5e0; border-radius: 8px; max-height: 220px;
+      overflow-y: auto; z-index: 1000; box-shadow: 0 8px 20px rgba(0,0,0,0.12); display: none;
+    }
+    .area-list.show { display: block; }
+    .area-item {
+      padding: 9px 14px; cursor: pointer; font-size: 0.85rem;
+      border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between;
+    }
+    .area-item:hover { background: #eff6ff; }
+    .area-item .city-badge { font-size: 0.72rem; background: #e0e7ff; color: #3730a3; padding: 2px 7px; border-radius: 99px; }
+    .area-card {
+      background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 10px;
+      padding: 12px 14px; font-size: 0.85rem;
+    }
+    .area-card .area-name { font-weight: 700; font-size: 1rem; color: #0c4a6e; }
+    .area-card .area-meta { color: #475569; margin-top: 3px; }
+    #btn-predict {
+      width: 100%; padding: 12px; border: none; border-radius: 10px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: white; font-size: 0.95rem; font-weight: 700; cursor: pointer;
+      transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    #btn-predict:hover:not(:disabled) {
+      background: linear-gradient(135deg, #1d4ed8, #1e40af);
+      box-shadow: 0 4px 12px rgba(37,99,235,0.4); transform: translateY(-1px);
+    }
+    #btn-predict:disabled { background: #94a3b8; cursor: default; transform: none; box-shadow: none; }
+    .spinner {
+      width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .result-card { border-radius: 12px; padding: 14px; display: none; flex-direction: column; gap: 10px; }
+    .result-card.show { display: flex; }
+    .verdict { display: flex; align-items: center; gap: 10px; border-radius: 10px; padding: 12px 14px; }
+    .verdict.slum { background: #fef2f2; border: 1px solid #fca5a5; }
+    .verdict.non-slum { background: #f0fdf4; border: 1px solid #86efac; }
+    .verdict-icon { font-size: 1.8rem; }
+    .verdict-text .label { font-size: 1.1rem; font-weight: 800; }
+    .verdict.slum .label    { color: #dc2626; }
+    .verdict.non-slum .label{ color: #16a34a; }
+    .verdict-text .prob { font-size: 0.82rem; color: #64748b; margin-top: 2px; }
+    .prob-bar-wrap { margin-top: 2px; }
+    .prob-label { font-size: 0.78rem; color: #64748b; display: flex; justify-content: space-between; }
+    .prob-bar-bg {
+      height: 10px; background: #e2e8f0; border-radius: 9999px;
+      position: relative; overflow: visible; margin: 22px 0 4px;
+    }
+    .prob-bar-fill { height: 100%; border-radius: 9999px; transition: width 0.6s ease; }
+    .prob-bar-fill.slum { background: linear-gradient(90deg, #f97316, #dc2626); }
+    .prob-bar-fill.non-slum { background: linear-gradient(90deg, #4ade80, #16a34a); }
+    .threshold-marker {
+      position: absolute; top: -4px; width: 3px; height: 18px;
+      background: #7c3aed; border-radius: 2px; transform: translateX(-50%);
+    }
+    .threshold-label {
+      position: absolute; top: -18px; font-size: 0.65rem; color: #7c3aed;
+      font-weight: 700; transform: translateX(-50%); white-space: nowrap;
+    }
+    .feature-list { display: flex; flex-direction: column; gap: 7px; }
+    .feat-row { font-size: 0.8rem; }
+    .feat-label { color: #334155; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .feat-bar-bg { height: 7px; background: #f1f5f9; border-radius: 99px; overflow: hidden; }
+    .feat-bar-fill { height: 100%; border-radius: 99px; transition: width 0.5s ease; }
+    .feat-bar-fill.positive { background: #f97316; }
+    .feat-bar-fill.negative { background: #22c55e; }
+    .feat-value { color: #64748b; font-size: 0.72rem; margin-top: 1px; }
+    .narrative-box {
+      background: #fafafa; border: 1px solid #e2e8f0; border-radius: 10px;
+      padding: 12px 14px; font-size: 0.83rem; line-height: 1.6; color: #374151;
+    }
+    .narrative-box .nar-title { font-weight: 700; color: #1e3a5f; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; font-size: 0.85rem; }
+    .alert { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 12px 14px; font-size: 0.84rem; color: #92400e; display: none; }
+    .alert.show { display: block; }
+    .filter-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .city-btn {
+      padding: 5px 12px; border: 1px solid #cbd5e0; border-radius: 99px;
+      font-size: 0.78rem; cursor: pointer; background: white; color: #475569; transition: all 0.15s;
+    }
+    .city-btn:hover, .city-btn.active { background: #2563eb; border-color: #2563eb; color: white; }
+    .panel-inner::-webkit-scrollbar { width: 5px; }
+    .panel-inner::-webkit-scrollbar-track { background: transparent; }
+    .panel-inner::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 99px; }
+    .map-hint {
+      position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.7); color: white; font-size: 0.78rem;
+      padding: 6px 14px; border-radius: 99px; z-index: 500; pointer-events: none;
+      white-space: nowrap; transition: opacity 0.4s;
+    }
+
+    /* ───── Chatbot widget ───── */
+    .cb-fab {
+      position: fixed; right: 22px; bottom: 22px; z-index: 1200;
+      display: flex; align-items: center; gap: 9px;
+      padding: 12px 18px; border: none; border-radius: 999px; cursor: pointer;
+      background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+      color: white; font-size: 0.9rem; font-weight: 600; font-family: inherit;
+      box-shadow: 0 6px 20px rgba(37,99,235,0.4); transition: transform .15s, box-shadow .15s;
+    }
+    .cb-fab:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(37,99,235,0.5); }
+    .cb-fab svg { width: 20px; height: 20px; }
+    .cb-fab.hidden { display: none; }
+
+    .cb-panel {
+      position: fixed; right: 22px; bottom: 22px; z-index: 1300;
+      width: 390px; max-width: calc(100vw - 32px);
+      height: 70vh; max-height: 640px;
+      background: white; border-radius: 16px; overflow: hidden;
+      display: none; flex-direction: column;
+      box-shadow: 0 18px 50px rgba(15,23,42,0.32);
+      animation: cb-pop .18s ease;
+    }
+    .cb-panel.open { display: flex; }
+    @keyframes cb-pop { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+
+    .cb-header {
+      background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+      color: white; padding: 13px 16px; display: flex; align-items: center; gap: 11px;
+    }
+    .cb-avatar {
+      width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+      background: rgba(255,255,255,0.16); display: grid; place-items: center; font-size: 1.1rem;
+    }
+    .cb-h-title { font-size: 0.95rem; font-weight: 700; line-height: 1.2; }
+    .cb-h-sub { font-size: 0.68rem; opacity: 0.85; display: flex; align-items: center; gap: 5px; margin-top: 2px; }
+    .cb-dot { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; flex-shrink: 0; }
+    .cb-dot.ok { background: #4ade80; } .cb-dot.warn { background: #fbbf24; } .cb-dot.err { background: #f87171; }
+    .cb-close {
+      margin-left: auto; background: rgba(255,255,255,0.15); border: none; color: white;
+      width: 28px; height: 28px; border-radius: 8px; cursor: pointer; font-size: 1.1rem; line-height: 1;
+    }
+    .cb-close:hover { background: rgba(255,255,255,0.28); }
+
+    .cb-messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 11px; background: #f8fafc; }
+    .cb-msg { max-width: 85%; padding: 9px 12px; border-radius: 13px; font-size: 0.84rem; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+    .cb-msg.user { align-self: flex-end; background: #2563eb; color: white; border-bottom-right-radius: 4px; }
+    .cb-msg.bot { align-self: flex-start; background: white; color: #1e293b; border: 1px solid #e2e8f0; border-bottom-left-radius: 4px; }
+    .cb-msg.err { background: #fef2f2; border-color: #fca5a5; color: #b91c1c; }
+    .cb-sources { align-self: flex-start; max-width: 85%; display: flex; flex-direction: column; gap: 4px; margin-top: -4px; }
+    .cb-src-title { font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #94a3b8; }
+    .cb-sources a { font-size: 0.74rem; color: #2563eb; text-decoration: none; padding: 4px 8px; background: #eff6ff; border-radius: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cb-sources a:hover { text-decoration: underline; }
+
+    .cb-empty { margin: auto; text-align: center; color: #64748b; padding: 10px; }
+    .cb-e-icon { font-size: 1.8rem; }
+    .cb-empty h4 { font-size: 0.9rem; color: #334155; margin: 8px 0 4px; }
+    .cb-empty p { font-size: 0.76rem; line-height: 1.5; margin-bottom: 12px; }
+    .cb-suggest { display: flex; flex-direction: column; gap: 6px; }
+    .cb-suggest button {
+      font-family: inherit; font-size: 0.76rem; text-align: left; color: #334155;
+      background: white; border: 1px solid #e2e8f0; border-radius: 9px; padding: 8px 10px; cursor: pointer; transition: .15s;
+    }
+    .cb-suggest button:hover { border-color: #2563eb; color: #2563eb; background: #eff6ff; }
+
+    .cb-typing { align-self: flex-start; display: flex; gap: 4px; padding: 11px 13px; background: white; border: 1px solid #e2e8f0; border-radius: 13px; }
+    .cb-typing span { width: 6px; height: 6px; border-radius: 50%; background: #94a3b8; animation: cb-blink 1.2s infinite; }
+    .cb-typing span:nth-child(2) { animation-delay: .2s; } .cb-typing span:nth-child(3) { animation-delay: .4s; }
+    @keyframes cb-blink { 0%,60%,100% { opacity: .3; } 30% { opacity: 1; } }
+
+    .cb-composer { display: flex; gap: 8px; padding: 11px; border-top: 1px solid #e2e8f0; background: white; }
+    .cb-composer textarea {
+      flex: 1; resize: none; max-height: 96px; padding: 9px 12px; font-family: inherit; font-size: 0.84rem;
+      border: 1px solid #cbd5e0; border-radius: 10px; background: #f8fafc; outline: none; line-height: 1.4;
+    }
+    .cb-composer textarea:focus { border-color: #2563eb; background: white; box-shadow: 0 0 0 3px rgba(37,99,235,0.15); }
+    .cb-send {
+      flex-shrink: 0; width: 40px; border: none; border-radius: 10px; background: #2563eb; color: white; cursor: pointer; display: grid; place-items: center;
+    }
+    .cb-send:hover { background: #1d4ed8; } .cb-send:disabled { background: #94a3b8; cursor: default; }
+    .cb-send svg { width: 18px; height: 18px; }
+
+    @media (max-width: 480px) {
+      .cb-panel { right: 8px; left: 8px; bottom: 8px; width: auto; height: 80vh; }
+      .cb-fab { right: 14px; bottom: 14px; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>🏘️ Slum Area Detection</h1>
+    <p>Click an area on the map or search for a neighbourhood to predict its condition</p>
+  </div>
+</header>
+<div class="main">
+  <div class="panel">
+    <div class="panel-inner">
+      <div>
+        <div class="section-title">Search Area</div><br/>
+        <div class="area-dropdown">
+          <div class="search-row">
+            <input id="search-input" type="text" placeholder="Type a place, Enter = search on map…" autocomplete="off"/>
+            <button class="btn-icon" id="btn-clear" title="Clear" style="display:none">✕</button>
+          </div>
+          <div class="area-list" id="area-list"></div>
+        </div>
+      </div>
+      <div>
+        <div class="section-title">Filter by City</div><br/>
+        <div class="filter-row" id="city-filter">
+          <button class="city-btn active" data-city="">All</button>
+        </div>
+      </div>
+      <div id="area-info" style="display:none">
+        <div class="section-title">Selected Area</div><br/>
+        <div class="area-card">
+          <div class="area-name" id="info-name">—</div>
+          <div class="area-meta" id="info-meta">—</div>
+        </div>
+      </div>
+      <button id="btn-predict" disabled>🔍 Predict Area</button>
+      <div class="alert" id="alert-box"></div>
+      <div class="result-card" id="result-card">
+        <div class="verdict" id="verdict-box">
+          <div class="verdict-icon" id="verdict-icon"></div>
+          <div class="verdict-text">
+            <div class="label" id="verdict-label"></div>
+            <div class="prob" id="verdict-prob"></div>
+          </div>
+        </div>
+        <div class="prob-bar-wrap">
+          <div class="prob-label"><span>Slum Probability</span><span id="prob-pct"></span></div>
+          <div class="prob-bar-bg">
+            <div class="prob-bar-fill" id="prob-fill" style="width:0%"></div>
+            <div class="threshold-marker" id="threshold-marker">
+              <div class="threshold-label" id="threshold-label"></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="section-title">Key Factors (SHAP)</div><br/>
+          <div class="feature-list" id="feat-list"></div>
+        </div>
+        <div class="narrative-box">
+          <div class="nar-title">🤖 AI Analysis</div>
+          <div id="narrative-text"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div style="flex:1;position:relative">
+    <div id="map"></div>
+    <div class="map-hint" id="map-hint">Click anywhere on the map to predict that point, or search a location & press Enter</div>
+  </div>
+</div>
+
+<!-- ───── Chatbot widget ───── -->
+<button class="cb-fab" id="cb-fab" aria-label="Open Upgrading Advisor">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+  Upgrading Advisor
+</button>
+
+<div class="cb-panel" id="cb-panel" role="dialog" aria-label="Settlement Upgrading Advisor">
+  <div class="cb-header">
+    <div class="cb-avatar">◍</div>
+    <div>
+      <div class="cb-h-title">Upgrading Advisor</div>
+      <div class="cb-h-sub"><span class="cb-dot" id="cb-status-dot"></span><span id="cb-status-text">Checking services…</span></div>
+    </div>
+    <button class="cb-close" id="cb-close" aria-label="Close">×</button>
+  </div>
+  <div class="cb-messages" id="cb-messages"></div>
+  <div class="cb-composer">
+    <textarea id="cb-input" rows="1" placeholder="Ask how to upgrade a detected area…"></textarea>
+    <button class="cb-send" id="cb-send" aria-label="Send">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4 21 12 3.4 3.6 3 10l12 2-12 2z"/></svg>
+    </button>
+  </div>
+</div>
+
+<script>
+const API = "";
+let allAreas = [];
+let filteredAreas = [];
+let selectedUnit = null;
+let geoLayer = null;
+let selectedLayer = null;
+let threshold = 0.1013;  // cosmetic fallback only; real value comes from /metadata (operating_threshold)
+let activeCityFilter = "";
+let mapInitialized = false;
+let pendingPoint = null;   // {lat, lon} of an arbitrary clicked/searched point
+let pointMarker = null;
+
+const map = L.map("map", { preferCanvas: true }).setView([-2.5, 118.0], 5);
+
+// Try tile providers in order — CartoDB → OSM → skip gracefully
+const tileProviders = [
+  {
+    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    opts: { attribution: "© OpenStreetMap © CartoDB", maxZoom: 19, subdomains: "abcd" }
+  },
+  {
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    opts: { attribution: "© OpenStreetMap contributors", maxZoom: 18 }
+  }
+];
+
+let currentTileLayer = null;
+let tileErrorCount = 0;
+function tryTile(index) {
+  if (index >= tileProviders.length) return; // No tiles available, continue without
+  const p = tileProviders[index];
+  const layer = L.tileLayer(p.url, p.opts);
+  let errorFired = false;
+  layer.on("tileerror", function() {
+    tileErrorCount++;
+    if (!errorFired && tileErrorCount >= 3) {
+      errorFired = true;
+      map.removeLayer(layer);
+      currentTileLayer = null;
+      tileErrorCount = 0;
+      tryTile(index + 1);
+    }
+  });
+  layer.addTo(map);
+  currentTileLayer = layer;
+}
+tryTile(0);
+
+map.on("click", (e) => { setPendingPoint(e.latlng); });
+
+function unitColor(gt) {
+  if (gt === 1) return { color: "#dc2626", fillColor: "#fca5a5", fillOpacity: 0.4, weight: 1.5 };
+  if (gt === 0) return { color: "#16a34a", fillColor: "#86efac", fillOpacity: 0.4, weight: 1.5 };
+  return { color: "#64748b", fillColor: "#cbd5e0", fillOpacity: 0.25, weight: 1 };
+}
+function selectedStyle() { return { color: "#2563eb", fillColor: "#93c5fd", fillOpacity: 0.6, weight: 3 }; }
+
+async function loadBoundaries() {
+  try {
+    const url = activeCityFilter ? `${API}/boundaries?city=${activeCityFilter}` : `${API}/boundaries`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const geojson = await res.json();
+    if (geoLayer) map.removeLayer(geoLayer);
+    geoLayer = L.geoJSON(geojson, {
+      style: f => unitColor(f.properties && f.properties.slum),
+      onEachFeature(feature, layer) {
+        const p = feature.properties || {};
+        layer.bindTooltip(
+          "<b>" + (p.unit_name || p.unit_id) + "</b><br/>" +
+          (p.city || "") + " · " + (p.kumuh_level || (p.slum === 1 ? "Slum" : "Not slum")),
+          { sticky: true }
+        );
+        layer.on("click", function(e) {
+          L.DomEvent.stopPropagation(e);
+          selectUnit({ unit_id: p.unit_id, unit_name: p.unit_name || p.unit_id, city: p.city, ground_truth: p.slum, kumuh_level: p.kumuh_level }, layer);
+        });
+      },
+    }).addTo(map);
+    if (!mapInitialized && geojson.features && geojson.features.length > 0) {
+      try { map.fitBounds(geoLayer.getBounds(), { padding: [20, 20] }); } catch(e) {}
+      mapInitialized = true;
+    }
+  } catch(err) { console.warn("Boundaries load failed:", err); }
+}
+
+async function loadAreas() {
+  try {
+    const res = await fetch(`${API}/areas`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    allAreas = data.areas || [];
+    filteredAreas = allAreas;
+    buildCityFilter();
+  } catch(err) { console.warn("Areas load failed:", err); }
+}
+
+function buildCityFilter() {
+  const cities = [...new Set(allAreas.map(a => a.city).filter(Boolean))].sort();
+  const container = document.getElementById("city-filter");
+  container.innerHTML = "";
+  const allBtn = document.createElement("button");
+  allBtn.className = "city-btn active"; allBtn.dataset.city = "";
+  allBtn.textContent = "All (" + allAreas.length + ")";
+  allBtn.addEventListener("click", function() {
+    document.querySelectorAll(".city-btn").forEach(b => b.classList.remove("active"));
+    allBtn.classList.add("active"); activeCityFilter = "";
+    updateSearchFilter(); loadBoundaries();
+  });
+  container.appendChild(allBtn);
+  cities.forEach(city => {
+    const count = allAreas.filter(a => a.city === city).length;
+    const btn = document.createElement("button");
+    btn.className = "city-btn"; btn.dataset.city = city;
+    btn.textContent = city + " (" + count + ")";
+    btn.addEventListener("click", function() {
+      document.querySelectorAll(".city-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active"); activeCityFilter = city;
+      updateSearchFilter(); loadBoundaries();
+    });
+    container.appendChild(btn);
+  });
+}
+
+const searchInput = document.getElementById("search-input");
+const areaList = document.getElementById("area-list");
+const btnClear = document.getElementById("btn-clear");
+
+function updateSearchFilter() {
+  const q = searchInput.value.toLowerCase().trim();
+  filteredAreas = allAreas.filter(function(a) {
+    const cityOk = !activeCityFilter || a.city === activeCityFilter;
+    const nameOk = !q || (a.unit_name || "").toLowerCase().includes(q) || a.unit_id.toLowerCase().includes(q) || (a.city || "").toLowerCase().includes(q);
+    return cityOk && nameOk;
+  });
+}
+
+function showDropdown() {
+  updateSearchFilter(); renderDropdown(); areaList.classList.add("show");
+}
+function hideDropdown() { setTimeout(function() { areaList.classList.remove("show"); }, 180); }
+
+function renderDropdown() {
+  const slice = filteredAreas.slice(0, 60);
+  if (slice.length === 0) { areaList.innerHTML = '<div class="area-item" style="color:#94a3b8">No results</div>'; return; }
+  areaList.innerHTML = slice.map(function(a) {
+    return '<div class="area-item" data-uid="' + a.unit_id + '"><span>' + (a.unit_name || a.unit_id) + '</span><span class="city-badge">' + (a.city || "") + '</span></div>';
+  }).join("");
+  if (filteredAreas.length > 60) {
+    areaList.innerHTML += '<div class="area-item" style="color:#94a3b8;font-style:italic">+ ' + (filteredAreas.length - 60) + ' lainnya, ketik lebih spesifik...</div>';
+  }
+  areaList.querySelectorAll("[data-uid]").forEach(function(el) {
+    el.addEventListener("mousedown", function(e) {
+      e.preventDefault();
+      const uid = el.dataset.uid;
+      const area = allAreas.find(function(a) { return a.unit_id === uid; });
+      if (area) selectUnitFromList(area);
+    });
+  });
+}
+
+searchInput.addEventListener("input", function() {
+  btnClear.style.display = searchInput.value ? "block" : "none";
+  showDropdown();
+});
+searchInput.addEventListener("focus", showDropdown);
+searchInput.addEventListener("blur", hideDropdown);
+
+btnClear.addEventListener("click", function() {
+  searchInput.value = ""; btnClear.style.display = "none";
+  updateSearchFilter(); areaList.classList.remove("show"); clearSelection();
+});
+
+// Press Enter -> geocode the text to ANY place in Indonesia (not just training units).
+searchInput.addEventListener("keydown", function(e) {
+  if (e.key === "Enter") { e.preventDefault(); runGeocode(); }
+});
+
+async function runGeocode() {
+  const q = searchInput.value.trim();
+  if (!q) return;
+  areaList.innerHTML = '<div class="area-item" style="color:#94a3b8">Searching for "' + q + '"…</div>';
+  areaList.classList.add("show");
+  try {
+    const res = await fetch(`${API}/geocode?q=` + encodeURIComponent(q));
+    const data = await res.json().catch(function() { return {}; });
+    const results = (res.ok && data.results) ? data.results : [];
+    if (!results.length) {
+      areaList.innerHTML = '<div class="area-item" style="color:#94a3b8">Location not found</div>';
+      return;
+    }
+    areaList.innerHTML = results.map(function(r, i) {
+      return '<div class="area-item" data-geo="' + i + '"><span>📍 ' + r.display_name + '</span></div>';
+    }).join("");
+    areaList.querySelectorAll("[data-geo]").forEach(function(el) {
+      el.addEventListener("mousedown", function(ev) {
+        ev.preventDefault();
+        const r = results[parseInt(el.dataset.geo, 10)];
+        areaList.classList.remove("show");
+        map.setView([r.lat, r.lon], 15);
+        setPendingPoint({ lat: r.lat, lng: r.lon });
+      });
+    });
+  } catch(e) {
+    areaList.innerHTML = '<div class="area-item" style="color:#94a3b8">Failed to search location</div>';
+  }
+}
+
+function selectUnit(unitInfo, mapLayer) {
+  selectedUnit = unitInfo;
+  clearPendingPoint();
+  if (selectedLayer) { try { geoLayer.resetStyle(selectedLayer); } catch(e) {} selectedLayer = null; }
+  if (mapLayer) { mapLayer.setStyle(selectedStyle()); selectedLayer = mapLayer; }
+  document.getElementById("area-info").style.display = "block";
+  document.getElementById("info-name").textContent = unitInfo.unit_name || unitInfo.unit_id;
+  const metaParts = [];
+  if (unitInfo.city) metaParts.push("Kota: " + unitInfo.city);
+  if (unitInfo.unit_id) metaParts.push("ID: " + unitInfo.unit_id);
+  document.getElementById("info-meta").textContent = metaParts.join(" · ");
+  document.getElementById("btn-predict").disabled = false;
+  searchInput.value = unitInfo.unit_name || unitInfo.unit_id;
+  btnClear.style.display = "block";
+  clearResult(); hideAlert();
+}
+
+function selectUnitFromList(area) {
+  areaList.classList.remove("show");
+  searchInput.value = area.unit_name || area.unit_id;
+  btnClear.style.display = "block";
+  selectedUnit = area;
+  clearPendingPoint();
+  document.getElementById("area-info").style.display = "block";
+  document.getElementById("info-name").textContent = area.unit_name || area.unit_id;
+  const metaParts = [];
+  if (area.city) metaParts.push("Kota: " + area.city);
+  if (area.unit_id) metaParts.push("ID: " + area.unit_id);
+  document.getElementById("info-meta").textContent = metaParts.join(" · ");
+  document.getElementById("btn-predict").disabled = false;
+  clearResult(); hideAlert();
+  flyToUnit(area.unit_id);
+}
+
+function flyToUnit(unitId) {
+  if (!geoLayer) return;
+  geoLayer.eachLayer(function(layer) {
+    const p = layer.feature && layer.feature.properties;
+    if (p && p.unit_id === unitId) {
+      try { map.fitBounds(layer.getBounds(), { maxZoom: 14, padding: [40, 40] }); } catch(e) {}
+      if (selectedLayer) { try { geoLayer.resetStyle(selectedLayer); } catch(e) {} }
+      layer.setStyle(selectedStyle()); selectedLayer = layer;
+    }
+  });
+}
+
+function clearPendingPoint() {
+  pendingPoint = null;
+  if (pointMarker) { try { map.removeLayer(pointMarker); } catch(e) {} pointMarker = null; }
+}
+
+function setPendingPoint(latlng) {
+  pendingPoint = { lat: latlng.lat, lon: latlng.lng };
+  selectedUnit = null;
+  if (selectedLayer) { try { geoLayer.resetStyle(selectedLayer); } catch(e) {} selectedLayer = null; }
+  if (pointMarker) pointMarker.setLatLng(latlng);
+  else pointMarker = L.marker(latlng).addTo(map);
+  document.getElementById("area-info").style.display = "block";
+  document.getElementById("info-name").textContent = "📍 Point selected";
+  document.getElementById("info-meta").textContent =
+    latlng.lat.toFixed(5) + ", " + latlng.lng.toFixed(5) + " — press Predict to analyze the radius";
+  document.getElementById("btn-predict").disabled = false;
+  searchInput.value = ""; btnClear.style.display = "none";
+  clearResult(); hideAlert();
+  document.getElementById("map-hint").style.opacity = "0";
+}
+
+function clearSelection() {
+  selectedUnit = null;
+  clearPendingPoint();
+  if (selectedLayer) { try { geoLayer.resetStyle(selectedLayer); } catch(e) {} selectedLayer = null; }
+  document.getElementById("area-info").style.display = "none";
+  document.getElementById("btn-predict").disabled = true;
+  clearResult(); hideAlert();
+}
+
+document.getElementById("btn-predict").addEventListener("click", predict);
+
+async function predict() {
+  if (pendingPoint) return predictByPoint();
+  if (!selectedUnit) return;
+  clearResult(); hideAlert(); setBtnLoading(true);
+  try {
+    const res = await fetch(`${API}/predict-by-unit?unit_id=` + encodeURIComponent(selectedUnit.unit_id) + "&top_k=8");
+    if (!res.ok) {
+      const err = await res.json().catch(function() { return {}; });
+      throw new Error(err.detail || "HTTP " + res.status);
+    }
+    const data = await res.json();
+    renderResult(data);
+  } catch(err) {
+    showAlert("Failed to run prediction: " + err.message);
+  } finally {
+    setBtnLoading(false);
+  }
+}
+
+async function predictByPoint() {
+  clearResult(); hideAlert(); setBtnLoading(true);
+  try {
+    const res = await fetch(`${API}/predict-by-point`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: pendingPoint.lat, lon: pendingPoint.lon, top_k: 8 })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(function() { return {}; });
+      throw new Error(err.detail || "HTTP " + res.status);
+    }
+    renderResult(await res.json());
+  } catch(err) {
+    showAlert("Failed to predict this point: " + err.message);
+  } finally {
+    setBtnLoading(false);
+  }
+}
+
+function setBtnLoading(loading) {
+  const btn = document.getElementById("btn-predict");
+  if (loading) {
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner"></div> Processing...';
+  } else {
+    btn.disabled = !(selectedUnit || pendingPoint);
+    btn.innerHTML = "🔍 Predict Area";
+  }
+}
+
+async function fetchMetadata() {
+  try {
+    const res = await fetch(`${API}/metadata`);
+    if (!res.ok) return;
+    const data = await res.json();
+    threshold = data.operating_threshold || threshold;
+  } catch(e) {}
+}
+
+function renderResult(data) {
+  const card = document.getElementById("result-card");
+  card.style.display = "flex";
+  setTimeout(function() { card.classList.add("show"); }, 10);
+  const prob = data.slum_probability != null ? data.slum_probability : 0;
+  const isSlum = data.slum_prediction === 1;
+  const vbox = document.getElementById("verdict-box");
+  vbox.className = "verdict " + (isSlum ? "slum" : "non-slum");
+  document.getElementById("verdict-icon").textContent = isSlum ? "⚠️" : "✅";
+  document.getElementById("verdict-label").textContent = isSlum ? "SLUM AREA" : "NOT A SLUM AREA";
+  document.getElementById("verdict-prob").textContent = "Probability: " + (prob*100).toFixed(1) + "% · Threshold: " + (threshold*100).toFixed(1) + "%";
+  const fill = document.getElementById("prob-fill");
+  fill.style.width = (prob*100).toFixed(1) + "%";
+  fill.className = "prob-bar-fill " + (isSlum ? "slum" : "non-slum");
+  document.getElementById("prob-pct").textContent = (prob*100).toFixed(1) + "%";
+  const marker = document.getElementById("threshold-marker");
+  marker.style.left = (threshold*100).toFixed(1) + "%";
+  document.getElementById("threshold-label").textContent = "↑ " + (threshold*100).toFixed(0) + "%";
+  const featList = document.getElementById("feat-list");
+  featList.innerHTML = "";
+  const features = data.top_features || [];
+  const maxAbs = Math.max.apply(null, features.map(function(f) { return Math.abs(f.shap_value || 0); }).concat([0.0001]));
+  features.forEach(function(f) {
+    const shap = f.shap_value || 0;
+    const pct = (Math.abs(shap) / maxAbs * 100).toFixed(1);
+    const dir = shap > 0 ? "positive" : "negative";
+    const sign = shap > 0 ? "▲" : "▼";
+    const dirColor = shap > 0 ? "#dc2626" : "#16a34a";
+    const desc = f.description || f.feature;
+    const val = f.value != null ? Number(f.value).toFixed(3) : "N/A";
+    featList.innerHTML += '<div class="feat-row"><div class="feat-label" title="' + f.feature + '">' + sign + ' ' + desc + '</div><div class="feat-bar-bg"><div class="feat-bar-fill ' + dir + '" style="width:' + pct + '%"></div></div><div class="feat-value" style="color:' + dirColor + '">SHAP: ' + (shap > 0 ? "+" : "") + shap.toFixed(4) + ' · Value: ' + val + '</div></div>';
+  });
+  const narrative = data.explanation || data.narrative || "";
+  document.getElementById("narrative-text").textContent = narrative || "(No explanation available)";
+  if (selectedLayer && data.slum_prediction !== undefined) {
+    const style = data.slum_prediction === 1 ? { color: "#dc2626", fillColor: "#fca5a5", fillOpacity: 0.7, weight: 3 } : { color: "#16a34a", fillColor: "#86efac", fillOpacity: 0.7, weight: 3 };
+    selectedLayer.setStyle(style);
+  }
+  if (data.geometry && !selectedLayer) {
+    try {
+      const hl = L.geoJSON({ type: "Feature", geometry: data.geometry }, {
+        style: data.slum_prediction === 1 ? { color: "#dc2626", fillColor: "#fca5a5", fillOpacity: 0.7, weight: 3 } : { color: "#16a34a", fillColor: "#86efac", fillOpacity: 0.7, weight: 3 }
+      }).addTo(map);
+      try { map.fitBounds(hl.getBounds(), { maxZoom: 15 }); } catch(e) {}
+    } catch(e) {}
+  }
+}
+
+function clearResult() {
+  const card = document.getElementById("result-card");
+  card.classList.remove("show"); card.style.display = "none";
+}
+function showAlert(msg) {
+  const el = document.getElementById("alert-box");
+  el.textContent = "⚠️ " + msg; el.classList.add("show");
+}
+function hideAlert() { document.getElementById("alert-box").classList.remove("show"); }
+
+async function init() {
+  await fetchMetadata();
+  await Promise.all([loadAreas(), loadBoundaries()]);
+  // Map was created inside a flex layout; force a resize once the DOM settled.
+  setTimeout(function() { try { map.invalidateSize(); } catch(e) {} }, 200);
+  checkGee();
+}
+
+async function checkGee() {
+  try {
+    const res = await fetch(`${API}/health`);
+    if (!res.ok) return;
+    const h = await res.json();
+    const hint = document.getElementById("map-hint");
+    if (h.gee_enabled) {
+      hint.textContent = "Click anywhere on the map to predict that point — or search a location & press Enter.";
+    } else {
+      hint.textContent = "GEE is not active: only the coloured areas (local data) can be predicted. Set GEE_PROJECT in .env to predict any location.";
+      hint.style.background = "rgba(146,64,14,0.88)";
+      hint.style.opacity = "1";
+    }
+  } catch(e) {}
+}
+init();
+
+/* ═══════════ Chatbot widget ═══════════ */
+const CHAT_API = "/chatbot";
+const cbSuggestions = [
+  "How can a local government upgrade a riverside slum settlement?",
+  "What funding programs exist for slum upgrading in Indonesia?",
+  "How to improve sanitation and clean water access in informal settlements?",
+];
+let cbSessionId = localStorage.getItem("cb_session_id");
+if (!cbSessionId) { cbSessionId = "web-" + Math.random().toString(36).slice(2, 11); localStorage.setItem("cb_session_id", cbSessionId); }
+let cbHealthChecked = false, cbBusy = false;
+
+const cbFab = document.getElementById("cb-fab");
+const cbPanel = document.getElementById("cb-panel");
+const cbClose = document.getElementById("cb-close");
+const cbMessages = document.getElementById("cb-messages");
+const cbInput = document.getElementById("cb-input");
+const cbSend = document.getElementById("cb-send");
+
+function cbOpen() {
+  cbPanel.classList.add("open");
+  cbFab.classList.add("hidden");
+  if (!cbMessages.children.length) cbRenderEmpty();
+  if (!cbHealthChecked) { cbHealthChecked = true; cbCheckHealth(); }
+  setTimeout(function() { cbInput.focus(); }, 100);
+}
+function cbClosePanel() { cbPanel.classList.remove("open"); cbFab.classList.remove("hidden"); }
+
+cbFab.addEventListener("click", cbOpen);
+cbClose.addEventListener("click", cbClosePanel);
+
+function cbRenderEmpty() {
+  const wrap = document.createElement("div");
+  wrap.className = "cb-empty"; wrap.id = "cb-empty";
+  const ic = document.createElement("div"); ic.className = "cb-e-icon"; ic.textContent = "◍";
+  const h = document.createElement("h4"); h.textContent = "Settlement Upgrading Advisor";
+  const p = document.createElement("p");
+  p.textContent = "Ask how to improve or upgrade a detected area. I search the web for current programs, best practices and funding, then answer with sources.";
+  const sg = document.createElement("div"); sg.className = "cb-suggest";
+  cbSuggestions.forEach(function(q) {
+    const b = document.createElement("button"); b.textContent = q;
+    b.addEventListener("click", function() { cbInput.value = q; cbSendMessage(); });
+    sg.appendChild(b);
+  });
+  wrap.append(ic, h, p, sg);
+  cbMessages.appendChild(wrap);
+}
+
+function cbScrollBottom() { cbMessages.scrollTop = cbMessages.scrollHeight; }
+
+function cbAddMessage(role, text, isError) {
+  const div = document.createElement("div");
+  div.className = "cb-msg " + (role === "user" ? "user" : "bot") + (isError ? " err" : "");
+  div.textContent = text;
+  cbMessages.appendChild(div); cbScrollBottom();
+}
+
+function cbAddSources(sources) {
+  if (!sources || !sources.length) return;
+  const box = document.createElement("div"); box.className = "cb-sources";
+  const t = document.createElement("div"); t.className = "cb-src-title"; t.textContent = "Sources";
+  box.appendChild(t);
+  sources.slice(0, 4).forEach(function(s) {
+    const a = document.createElement("a");
+    a.href = s.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+    a.textContent = s.title || s.url;
+    box.appendChild(a);
+  });
+  cbMessages.appendChild(box); cbScrollBottom();
+}
+
+function cbShowTyping() {
+  const t = document.createElement("div");
+  t.className = "cb-typing"; t.id = "cb-typing";
+  t.innerHTML = "<span></span><span></span><span></span>";
+  cbMessages.appendChild(t); cbScrollBottom();
+}
+function cbHideTyping() { const t = document.getElementById("cb-typing"); if (t) t.remove(); }
+
+async function cbCheckHealth() {
+  const dot = document.getElementById("cb-status-dot");
+  const txt = document.getElementById("cb-status-text");
+  try {
+    const res = await fetch(`${CHAT_API}/api/health`);
+    if (!res.ok) throw new Error();
+    const h = await res.json();
+    if (h.llm_ready && h.search_ready) { dot.className = "cb-dot ok"; txt.textContent = "Ready"; }
+    else if (h.llm_ready || h.search_ready) { dot.className = "cb-dot warn"; txt.textContent = "Partially configured"; }
+    else { dot.className = "cb-dot err"; txt.textContent = "Not configured"; }
+  } catch (e) { dot.className = "cb-dot err"; txt.textContent = "Offline"; }
+}
+
+async function cbSendMessage() {
+  const q = cbInput.value.trim();
+  if (!q || cbBusy || q.length < 3) return;
+  const empty = document.getElementById("cb-empty"); if (empty) empty.remove();
+  cbAddMessage("user", q);
+  cbInput.value = ""; cbInput.style.height = "auto";
+  cbBusy = true; cbSend.disabled = true; cbShowTyping();
+  try {
+    const res = await fetch(`${CHAT_API}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: cbSessionId, question: q }),
+    });
+    cbHideTyping();
+    if (!res.ok) {
+      let detail = "Something went wrong. Please try again.";
+      try { const e = await res.json(); if (e.detail) detail = typeof e.detail === "string" ? e.detail : JSON.stringify(e.detail); } catch (_) {}
+      cbAddMessage("bot", detail, true);
+    } else {
+      const data = await res.json();
+      cbAddMessage("bot", data.answer || "(no answer)");
+      cbAddSources(data.sources);
+    }
+  } catch (e) {
+    cbHideTyping();
+    cbAddMessage("bot", "Could not reach the advisor. Check that the server is running.", true);
+  } finally {
+    cbBusy = false; cbSend.disabled = false; cbInput.focus();
+  }
+}
+
+cbSend.addEventListener("click", cbSendMessage);
+cbInput.addEventListener("keydown", function(e) {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); cbSendMessage(); }
+});
+cbInput.addEventListener("input", function() {
+  cbInput.style.height = "auto";
+  cbInput.style.height = Math.min(cbInput.scrollHeight, 96) + "px";
+});
+</script>
+</body>
+</html>
