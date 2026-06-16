@@ -58,8 +58,6 @@ Urban Pulse/
 └── README.md
 ```
 
-> The raw **dataset folder**, the **`.env`** file, and **`claude.md`** are intentionally excluded from version control (see `.gitignore`). The dataset is large and machine-local; `.env` holds secrets; `claude.md` is a local assistant note.
-
 ---
 
 ## Approach & Methodology
